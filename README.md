@@ -4,10 +4,108 @@ Command line interface to the cbsodata modules with added support for creating e
 
 # usage
 
-autocbs.py :: Download CBS data tables
+    autocbs.py :: Download CBS data tables
 
-Use argument -h (or omit any arguments) for the command line help
-  
+    arguments:
+    -h                      this help
+    -d                      download data for table (in -f). Implies -csv, -json
+                            and -xls if none of them are given
+    -f <folder>             folder name for data download, Identifier is added to
+                            the path, ./data/is the default
+    -s <string,>            search for keywords in table ShortDescription (can be
+                            comma seperated)
+    -id <identifier,>       table(s) to download using on TableInfos.Identifier
+    -v <level>              stdout output level (less->more) silent, critical,
+                            error, warning, info, verbose, allmsg
+    -n <nr>                 maximum tables to get (use this while testing)
+    -b <nr>                 start at record (use this while testing)
+    -m                      get meta data (TableInfos) of the selected table(s)
+    -nm                     do NOT maintain master excel (get_data_control.xlsx)
+                            with table info
+    -p                      get the DataProperties of the table
+    -csv                    save files as csv
+    -force                  force download of large result set (will still skip
+                            excel sheet TypedDataset when records > 1.000.000)
+    -update                 update already downloaded tables
+    -xls                    download/update excel file with table objects (will skip
+                            TypedDataSet for records > 1.000.000)
+    -json                   update json files
+    -mw                     table modifed within lastday, lastweek, lastmonth
+                            or lastyear
+
+# Data structure
+Following list is composed from reverse engineering the data downloads :punch:
+
+## TableListInfos
+
+The information present in a record retrieved with cbsodata.get_table_list (http://opendata.cbs.nl/ODataCatalog/Tables).
+
+Contains the attributes
+1..7  | 8..14 | 15..21 | 22..26
+------------- | ------------- | ------------- | -------------
+"Updated" | "Modified" | "Catalog" | "DefaultSelection"
+"ID" | "MetaDataModified" | "Frequency" | "GraphTypes"
+"Identifier" | "ReasonDelivery" | "Period" | "RecordCount"
+"Title" | "ExplanatoryText" | "SummaryAndLinks" | "ColumnCount"
+"ShortTitle" | "OutputStatus" | "ApiUrl" | "SearchPriority"
+"ShortDescription" | "Source" | "FeedUrl" |
+"Summary" | "Language" | "DefaultPresentation" |
+
+## TableInfos
+
+Contains the attributes 
+1..6  | 7..12 | 13..18 | 19..21
+------------- | ------------- | ------------- | -------------
+"ID" | "ReasonDelivery" | "ShortDescription" | "Source"
+"Title" | "ExplanatoryText" | "Description" | "MetaDataModified"
+"ShortTitle" | "Language" | "DefaultPresentation" | "SearchPriority"
+"Identifier" | "Catalog" | "DefaultSelection" |
+"Summary" | "Frequency" | "GraphTypes" |
+"Modified" | "Period" | "OutputStatus" |
+
+## DataProperties
+
+Contains the attributes 
+1..4  | 5..8 | 9..12 | 13..15
+------------- | ------------- | ------------- | -------------
+"odata.type" | "Type" | "MapYear" | "Decimals"
+"ID" | "Key" | "ReleasePolicy" | "Default"
+"Position" | "Title" | "Datatype" | "PresentationType"
+"ParentID" | "Description" | "Unit" |
+
+The _DataProperties."odata.type"="Cbs.OData.Dimension"_ may contain a seperate _"Dimension"_ type () which points to specific dimensions valid for the Table, e.g. "JeugdhulpInNatura", "Jeugdbescherming" and "Jeugdreclassering" for table 84137NED (-> get it with autocbs.py -d -p -xls -i 84137NED). These are downloaded as well.
+
+The key _DataProperties."odata.type"="Cbs.OData.Topic"_ can have type _"Topic"_ with as _"Key"_ a column for the Table, e.g. "JongerenMetJeugdhulpInNatura_1", "JeugdbeschEnJeugdhMetVerblInNat_4" and "JongerenMetJeugdreclassering_5" for table 82972NED (-> get it with autocbs.py -d -p -xls -i 82972NED).  
+
+The key _DataProperties."odata.type"="Cbs.OData.TimeDimension"_ can have type _"TimeDimension"_ with as _"Key"_ value "Perioden" which will point to an odata endpoint for the specific periods covered by the Table.  
+
+## Perioden
+
+Contains the attributes
+1..4  |
+------------- |
+"Key" |
+"Title" |
+"Description" |
+"Status" |
+
+## CategoryGroups
+
+Information about the grouping of the extra Dimensions.
+
+Contains the attributes
+1..5  |
+------------- |
+"ID"
+"DimensionKey"
+"Title"
+"Description"
+"ParentID"
+
+## TypedDataset
+
+The data itself. Contains all records for the table. Layout may differ on a table basis.
+
 # examples
 
 **1) autocbs.py -s jeugdzorg -f ./data/ -m -csv -force -update -mw lastyear**
@@ -35,10 +133,7 @@ The fourth run did the data downloads for the same tables in csv format. The Typ
 
 # remarks
 
--update:  When updating excel files only the sheets containing names corresponding to the table objects, including dimensions, are refreshed. Old data is removed and a new sheet with the same name is created. Other sheets will be intact.
-
--force:   When using argument force with excel files the old files will be overwritten.
-
--csv:     These files will be overwritten with either -update or -force.
-
--json:    These files will be overwritten with either -update or -force.
+- -update:  When updating excel files only the sheets containing names corresponding to the table objects, including dimensions, are refreshed. Old data is removed and a new sheet with the same name is created. Other sheets will be intact.
+- -force:   When using argument force with excel files the old files will be overwritten.
+- -csv:     These files will be overwritten with either -update or -force.
+- -json:    These files will be overwritten with either -update or -force.
