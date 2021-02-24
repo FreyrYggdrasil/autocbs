@@ -54,6 +54,9 @@ from openpyxl.utils.cell import coordinate_from_string, column_index_from_string
 #  command line arguments
 import sys
 
+#**********************************
+__version__ = '0.1.0'
+
 #  **************************************************
 #  timing program
 begin = datetime.datetime.now()
@@ -107,31 +110,37 @@ argument_list = [['-h', help_switch], ['-d', download_data],
 argument_list = [list((i, argument_list[i])) for i in range(len(argument_list))]
 sys_args = list(sys.argv)
 length = len(argument_list)
-results = []
+results_args = []
 for a in range(len(sys_args)):
     for x in range(length):
         try:
             result = argument_list[x][1].index(sys_args[a])            
             if type(argument_list[x][1][1]) == type(str()):
-                results.append([x, sys_args[a], sys_args[a+1]])
+                results_args.append([x, sys_args[a], sys_args[a+1]])
             elif type(argument_list[x][1][1]) == type(bool()):
-                results.append([x, sys_args[a], True])
+                results_args.append([x, sys_args[a], True])
             elif type(argument_list[x][1][1]) == type(int()):
-                results.append([x, sys_args[a], int(sys_args[a+1])])
+                results_args.append([x, sys_args[a], int(sys_args[a+1])])
             elif type(argument_list[x][1][1]) == type(list()):
-                results.append([x, sys_args[a], sys_args[a+1].split(',')])
+                results_args.append([x, sys_args[a], sys_args[a+1].split(',')])
         except ValueError:
             pass
         except IndexError:
             if type(argument_list[x][1][1]) == type(bool()):
-                results.append([x, sys_args[a], True])            
+                results_args.append([x, sys_args[a], True])            
             pass
-
+    else:
+        if length == 1:
+            results_args.append([0, '-h', True])
+            break
+   
+   
 # **************************************************
 # assign arguments
-for a in range(len(results)): 
-    argument_list[int(str(results[a][0]))][1][1] = results[a][2]
-    
+for a in range(len(results_args)): 
+    argument_list[int(str(results_args[a][0]))][1][1] = results_args[a][2]
+print(results_args, '\n', argument_list)
+
 help_switch = argument_list[0][1][1]
 download_data = argument_list[1][1][1]
 folder_name = argument_list[2][1][1]
@@ -151,7 +160,7 @@ force_download = argument_list[15][1][1]
 modified_within = argument_list[16][1][1]
 
 if help_switch:
-    print(sys.argv[0], ':: Download CBS data tables\narguments:\n-h\t\t\tthis help\n-d\t\t\tdownload data (in -f)\n-f <folder>\t\tfolder name for data (+ Identifier), ./data/is the default\n-s <string,>\t\tsearch for keywords in table shortdescription (can be comma seperated)\n-id <identifier>\ttable to download\n-v <level>\t\toutput level silent, info, warning, error, critical\n-n <nr>\t\t\tmaximum tables to get\n-b <nr>\t\t\tstart at record\n-m\t\t\tGet meta data table\n-nm\t\t\tdo NOT maintain master excel file with table info\n-p\t\t\tget the info of the table\n-csv\t\t\tsave files as csv\n-force\t\t\tForce download of large result set\n-update\t\t\tUpdate already downloaded tables\n-xls\t\t\tupdate excel file\n-json\t\t\tupdate json files\n-mw\t\t\ttable modifed within lastday, lastweek or lastmonth')
+    print(sys.argv[0], ':: Download CBS data tables\narguments:\n-h\t\t\tthis help\n-d\t\t\tdownload data for table (in -f). Implies -csv, -json\n\t\t\t and -xls if none of them are given\n-f <folder>\t\tfolder name for data download, Identifier is added to\n\t\t\t the path, ./data/is the default\n-s <string,>\t\tsearch for keywords in table ShortDescription (can be\n\t\t\t comma seperated)\n-id <identifier,>\ttable(s) to download using on TableInfos.Identifier\n-v <level>\t\tstdout output level (less->more) silent, critical,\n\t\t\t error, warning, info, verbose, allmsg\n-n <nr>\t\t\tmaximum tables to get (use this while testing)\n-b <nr>\t\t\tstart at record (use this while testing)\n-m\t\t\tget meta data (TableInfos) of the selected table(s)\n-nm\t\t\tdo NOT maintain master excel (get_data_control.xlsx)\n\t\t\t with table info\n-p\t\t\tget the DataProperties of the table\n-csv\t\t\tsave files as csv\n-force\t\t\tforce download of large result set (will still skip\n\t\t\t excel sheet TypedDataset when records > 1.000.000)\n-update\t\t\tupdate already downloaded tables\n-xls\t\t\tdownload/update excel file with table objects (will skip\n\t\t\t TypedDataSet for records > 1.000.000)\n-json\t\t\tupdate json files\n-mw\t\t\ttable modifed within lastday, lastweek, lastmonth\n\t\t\t or lastyear')
     raise SystemExit(0)
 
 # loglevel
@@ -265,15 +274,10 @@ def save_data(data, dir, p_identifier, metadata_name, argument):
     if type(argument) == type(str()):
         output_file = os.path.join(dir, p_identifier+'-'+metadata_name + '.' + argument)
         
-    elif type(data) == type(dict()):
-        # updating master file
-        # todo
-        pass
-        
     else:
         # getting data for excel
         output_file = os.path.join(dir, p_identifier+'-objects.xlsx')
-        sheet = argument
+        workbook = argument
 
     if argument == 'json':
         my_data = json.loads(str(data))
@@ -298,25 +302,30 @@ def save_data(data, dir, p_identifier, metadata_name, argument):
     
     else:
         # excel sheet data
+        if str(type(workbook)) != "<class 'openpyxl.workbook.workbook.Workbook'>":
+            workbook = convertTuple(workbook)
+        
+        sheet = workbook[metadata_name]        
+        
         for row in dataframe_to_rows(data, index=False, header=True):
             sheet.append(row)
 
-        if metadata_name == 'TableInfos':
+        if metadata_name == 'TableInfos' or metadata_name == 'TableListInfo':
             # transpose TableInfos for easier reading
-            transpose(sheet, min_row=1, max_row=1, min_col=1, max_col=21)
-            transpose_row_to_col(sheet, min_row=1, max_row=1, min_col=1, max_col=21,target_cell_address=(3,1))
-            transpose(sheet, min_row=2, max_row=2, min_col=1, max_col=21)
-            transpose_row_to_col(sheet, min_row=2, max_row=2, min_col=1, max_col=21,target_cell_address=(3,2))
+            start, stop = 1, sheet.max_column
+            transpose(sheet, min_row=1, max_row=1, min_col=1, max_col=sheet.max_column)
+            transpose_row_to_col(sheet, min_row=1, max_row=1, min_col=1, max_col=sheet.max_column,target_cell_address=(3,1))
+            transpose(sheet, min_row=2, max_row=2, min_col=1, max_col=sheet.max_column)
+            transpose_row_to_col(sheet, min_row=2, max_row=2, min_col=1, max_col=sheet.max_column,target_cell_address=(3,2))
             sheet.delete_rows(1,2)
             sheet.column_dimensions['A'].width = 16
-            sheet.column_dimensions['B'].width = 100
-            start, stop = 1, 21
+            sheet.column_dimensions['B'].width = 100            
             for index, row in enumerate(sheet.iter_rows()):
                 if start < index < stop:
                     for cell in row:
                         cell.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
 
-        return sheet 
+        return workbook 
         
 # **************************
 # master control data
@@ -397,12 +406,27 @@ def masterControlFile(*fromProp):
 # ****************************
 # get endpoint using cbsodata
 # on error with excel switch
-def get_table_endpoint(p_identifier, endpoint, file_path, *workbook):
+def get_table_endpoint(p_identifier, endpoint, file_path, workbook):
     
     global download_excel
-            
+    global data_refresh
+    
+    if endpoint == 'TableListInfo':
+        data = p_identifier
+        p_identifier = data['Identifier']
+    else:
+        p_identifier = p_identifier
+        
     file_exists = False
     
+    if str(type(workbook)) == "<class 'openpyxl.workbook.workbook.Workbook'>" and download_excel:       
+        for sheet_title in workbook.sheetnames:
+            if sheet_title == endpoint[0:30]:
+                sheet = workbook[sheet_title]
+                break
+            else:
+                sheet = workbook[sheet_title]
+
     # does file exist and do we update and/or force?
     # otherwise skip
     if not force_download and not data_refresh:
@@ -421,85 +445,112 @@ def get_table_endpoint(p_identifier, endpoint, file_path, *workbook):
             if Path(output_file).is_file():
                 file_exists = True
                 
+    elif force_download and download_excel:
+        data_refresh = True
+        output_file = os.path.join(file_path, p_identifier+'-objects.xlsx')
+        if Path(output_file).is_file():
+            file_exists = True       
+
     else:
         file_exists = False
         
-    # do csv & excel & json
-    if (not file_exists and download_data) and (download_csv or download_excel or download_json):
+    # do csv & json & excel
+    if (not file_exists and download_data) and (download_csv or download_json or download_excel):
 
         try:                
-            # put cbsodata respons in dataframe
-            if endpoint == 'TableInfos':
-                data = pd.DataFrame(cbsodata.get_meta(p_identifier, endpoint)) # pd.DataFrame(data_in, index=[0])
+            if endpoint == 'TableListInfo':
+                # put tablelistinfo in dataframe
+                data = pd.DataFrame(data, index=[0])
             else:
+                # put cbsodata respons in dataframe
                 data = pd.DataFrame(cbsodata.get_meta(p_identifier, endpoint))
             
         except Exception as e:
             p(warning, '\t\t\t\tUnable to retrieve object', endpoint, 'for table', p_identifier, '. The error message was\t\t\t\t', e)
             return
 
-        if download_excel:
-            workbook = convertTuple(workbook)            
+        if download_excel and workbook:
+            if type(workbook) != None: 
+                if str(type(workbook)) != "<class 'openpyxl.workbook.workbook.Workbook'>":
+                    workbook = convertTuple(workbook)            
+
             try:
                 # just remove this sheet, leave the rest alone
                 workbook.remove(workbook[endpoint[0:30]])
+                
             except Exception as e:
+                # the sheet for this data was not found
                 pass
                 
-            # create sheet for data
-            sheet = workbook.create_sheet(endpoint[0:30]) # max first 31 chars
-            workbook.active = workbook[endpoint[0:30]]
-            sheet = workbook.active               
+            finally:
+                # create sheet for data
+                for sheet_title in workbook.sheetnames:
+                    sheet = workbook[sheet_title]
+                else:
+                    sheet = workbook.create_sheet(endpoint[0:30])
+                workbook.active = workbook[endpoint[0:30]]
+                sheet = workbook.active 
 
         if endpoint == 'DataProperties':
-            # get extra Dimension endpoints
+            # get extra endpoints
             # will be added to excel file as sheets
+            # and .csv/.json files on disk
             data_np = data[['odata.type', 'Key']].to_numpy()
             for dimension in data_np:
                 if dimension[0] == 'Cbs.OData.Dimension':
-                    p(info, '\t\t\t\t\t... extra dimension ', dimension[1])
+                    p(info, '\t\t\t\t\t... extra Dimension', dimension[1])
                     # do it again
-                    get_table_endpoint(p_identifier, dimension[1], file_path, workbook if workbook else None)                   
-
+                    workbook = get_table_endpoint(p_identifier, dimension[1], file_path, workbook) 
+            
+            for period in data_np:
+                if period[0] == 'Cbs.OData.TimeDimension':
+                    if period[0][9] == "True":
+                        p(info, '\t\t\t\t\t... extra TimeDimension', period[1])
+                        # do it again
+                        workbook = get_table_endpoint(p_identifier, period[1], file_path, workbook) 
+            
         if download_csv:
             csv_data = save_data(data, file_path, p_identifier, endpoint,'csv')
-            return csv_data
+            #return csv_data
             
         if download_json:
             json_data = save_data(data.to_json(), file_path, p_identifier, endpoint, 'json')
-            return json_data
+            #return json_data
             
         if download_excel:
-            sheet = save_data(data, file_path, p_identifier, endpoint, sheet)
+            workbook = save_data(data, file_path, p_identifier, endpoint, workbook)
             return workbook
-    else:
-        p(warning, '\t\t\t\t\t... file exists but not updating')
+            
+    elif file_exists and (download_data or data_refresh) and download_excel:
+
+        try:                
+            # put cbsodata respons in dataframe
+            data = pd.DataFrame(cbsodata.get_meta(p_identifier, endpoint))
+            
+        except Exception as e:
+            p(warning, '\t\t\t\tUnable to retrieve object', endpoint, 'for table', p_identifier, '. The error message was\t\t\t\t', e)
+            return
+                    
+        workbook = save_data(data, file_path, p_identifier, endpoint, workbook)
+        
+        return workbook
     
-    # only save excel output once
     return
 
 # **********************************
 # download data from table
 # uses arg -f (default ./data/)
-def get_table_meta(data, *endpoint):
+def get_table_meta(data, endpoint, workbook):
 
     global download_excel
     
     p_identifier = data['Identifier']
         
     # table objects (endpoints for odata interface) excl. 'UntypedDataSet'
-    objects_lst = ['DataProperties','Perioden','TableInfos','CategoryGroups','TypedDataSet']
+    # objects_lst = ['DataProperties','TableInfos','CategoryGroups','TypedDataSet']
     
     file_path=folder_name+p_identifier+'/'
-    
-    # when endpoints given only retrieve those
-    retrieve_lst = []
-    if len(endpoint)>0:
-        for i in endpoint:
-            retrieve_lst.append(i)
-    else:
-        retrieve_lst = objects_lst
-        
+            
     # export file based on argument + subfolders
     if not os.path.isdir(file_path):
         try:
@@ -508,13 +559,11 @@ def get_table_meta(data, *endpoint):
             p(error,'Creating folder', file_path, 'failed with error', e, '. Do you have sufficient rights?')
             download_data = False
 
-    if download_excel:
-        p(info,'\t\texcel file name\t\t'+file_path+p_identifier+"-objects.xlsx")
-        
+    if download_excel:    
         output_file = file_path+p_identifier+"-objects.xlsx"
-        
+
         if Path(output_file).is_file():
-            # file exists
+            # file exists, read it
             if data_refresh:        
                 try:
                     # does the workbook exist? if so update sheets.
@@ -536,37 +585,33 @@ def get_table_meta(data, *endpoint):
     else:
         workbook = None
         
-    if download_csv:
-        p(info,'\t\tcsv file name(s)\t' + file_path+p_identifier+'-<object>.csv')
-        
-    if download_json:
-        p(info,'\t\tjson file name(s)\t' + file_path+p_identifier+'-<object>.json')
-
-    # save the data endpoints from list
-    for i in retrieve_lst:
-        p(info, '\t\t\t\t... performing update for', i)
-        if i == 'TableInfos':
-            return_value = get_table_endpoint(p_identifier, i, file_path, workbook)
-        else:    
-            return_value = get_table_endpoint(p_identifier, i, file_path, workbook)
+    # get the data endpoints from list
+    p(info, '\t\t\t\t... performing update for', endpoint)
+    if endpoint == 'TableListInfo':
+        workbook = get_table_endpoint(data, endpoint, file_path, workbook)
+    else:
+        if download_excel or download_csv or download_json:
+            workbook = get_table_endpoint(p_identifier, endpoint, file_path, workbook)
 
     # saving excel
-    if download_excel and not type(return_value) == None:        
+    if download_excel and str(type(workbook)) == "<class 'openpyxl.workbook.workbook.Workbook'>":
         if not no_master:
             controlInformationTable['lastRefreshDateExcel'] = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
         try:
-            return_value.save(file_path+p_identifier+"-objects.xlsx")                    
-        except AttributeError:
+            workbook.save(file_path+p_identifier+"-objects.xlsx")                    
+
+        except AttributeError as e:
+            p(error, 'an AttributeError appeared whil trying to save the excel file\n', e)
             if not data_refresh and not force_download:
                 pass
-            else:
-                p(warning,'Updating excel file failed. If it exists you could use *-update* or *-force*.\n')
+                
         except Exception as e:
             p(warning,'\nUnable to save workbook', file_path+p_identifier+"-objects.xlsx.", "Do you have it open in Excel?\n The error message is \n", e)
             pass
+
                     
-    return return_value
+    return workbook
 
 # *************************************
 # Convert (saved) text as json into list
@@ -610,10 +655,15 @@ def convertToList(data, datatype):
 # main get table list if no ID given
 if not table_identifier:
     if len(glob.glob(folder_name + "cbs_all_tables.list")) > 0 and data_refresh:
-        p(info, "A local copy (" + folder_name + "cbs_all_tables.json) has been found. Update is used, retrieving data from CBS odata endpoint and saving it as new local copy.")
+        p(info, "A local copy (" + folder_name + "cbs_all_tables.json) has been found. Update is used, \nretrieving data from CBS odata endpoint and saving it as new local copy.")
         tables = cbsodata.get_table_list()
         # save as local copy
-        pickle.dump( tables, open( folder_name + "cbs_all_tables.list", "wb" ) )
+        if not os.path.isdir(folder_name):
+            try:
+                os.mkdir(folder_name)
+                pickle.dump( tables, open( folder_name + "cbs_all_tables.list", "wb" ) )
+            except Exception as e:
+                p(error,'Creating folder', file_path, 'failed with error', e, '\nDo you have sufficient rights?')
       
     elif len(glob.glob(folder_name + "cbs_all_tables.list")) > 0 and not data_refresh:     
         # we have a cbs_all_tables local copy
@@ -621,18 +671,35 @@ if not table_identifier:
         tables = convertToList(folder_name + "cbs_all_tables.list", "CBSODATA")
 
     else:
-        p(info, "There is no " + folder_name + "cbs_all_tables.list found. Retrieving data from CBS odata endpoint and saving it as new local copy.")
+        p(info, "There is no " + folder_name + "cbs_all_tables.list found. Retrieving data from\nCBS odata endpoint and saving it as new local copy.")
+        
         tables = cbsodata.get_table_list()
         # save as local copy
-        pickle.dump( tables, open( folder_name + "cbs_all_tables.list", "wb" ) ) 
+        if not os.path.isdir(folder_name):
+            try:
+                os.mkdir(folder_name)
+                pickle.dump( tables, open( folder_name + "cbs_all_tables.list", "wb" ) )
+            except Exception as e:
+                p(error,'Creating folder', file_path, 'failed with error', e, '. Do you have sufficient rights?')
         
 else:
-    # just this one table
+    # just this one table(s)
     tables = []
+    p(info, "Retrieving data from CBS odata endpoint for every table ID passed.")
     for i in table_identifier:
-        tables.append(cbsodata.get_meta(i, 'TableInfos'))
-    p(verbose, 'TableInfo downloaded from CBS for', len(tables), 'due to argument -i.')
-    get_tables = len(tables)
+        try:
+            filter = "Identifier eq '"+str(i)+"'"
+            tables.append(cbsodata.get_table_list(None,filter)) 
+            p(info,"Table", i, "added to the selection list. Total", len(tables))
+        except Exception as e:
+            p(warning,"The table [" + str(i) + "] could not be reached. Are you using the correct Table Identifier?\nThe error message was", e)
+            pass
+    if len(tables) == 0:
+        p(critical,"A table identifier(s) was given, but none could be reached at the proper odata endpoint.")
+        raise SystemExit(1)
+    else:
+        p(verbose, 'TableInfo downloaded from CBS for', len(tables), 'due to argument -i.')
+        get_tables = len(tables)
 
 # some vars for loop
 all_tables = len(tables)    
@@ -663,7 +730,7 @@ if end_record > all_tables:
     
 # Console messages 
 p(info, 'Searching in ShortDescription for keyword(s) ' + str(search_arg) if search_arg else 'No search keywords (-s) given.')
-p(verbose, 'Downloading data into folder ', folder_name)
+p(info, 'Downloading data into folder ', folder_name)
 
 if table_meta: p(verbose, 'Meta data will be downloaded...')
 
@@ -675,13 +742,16 @@ else:
     search_list=[]
 
 # start loop for all tables
+
 for table in tables:
     itable+=1
-    
+    if table_identifier:
+        table=table[0]  
     # loop until we get at the start record
     if itable >= start_record and itable <= end_record:
-        datemodified = datetime.datetime.strptime(table['Modified'][0:10], '%Y-%m-%d')
-        datemodified = datetime.datetime.date(datemodified)
+        if modified_within:
+            datemodified = datetime.datetime.strptime(table['Modified'][0:10], '%Y-%m-%d')
+            datemodified = datetime.datetime.date(datemodified)
         
         if modified_within == 'lastday':
             minmoddate = datetime.date.today() - datetime.timedelta(days=1)
@@ -705,9 +775,9 @@ for table in tables:
                 p(verbose, 'Table is last modified on', datemodified, 'which is too far in the past.')
         else:
             modified_within_selection = True
-            
+        
         if modified_within_selection:
-            p(verbose, 'getting meta data', table['Identifier'])
+            p(verbose, 'getting meta data', table)
             p(verbose, 'Identifier table ' + table['Identifier'] + '\nShortTitle table' + table['ShortTitle'])
             p(verbose, '\nShortDescription table' + table['ShortDescription'])            
 
@@ -738,35 +808,63 @@ if len(result_list)>0:
     p(info, '\nNumber of tables to retrieve:', len(result_list))
     
     if len(result_list) > 60 and (not data_refresh or not force_download) and download_data and not table_prop:
-        p(warning, "\nThis is (probably) a lot of data, please use -force -update to download. \nOr use parameter -m to download just the table information.")
+        p(warning, "\nThis is (probably) a lot of data, please use -force -update to download. \nOr use parameter -m to download just the table information.\nArguments evaluated ", str(results_args))
+        
     else:
-        if download_data:
+        for result in result_list:
+            itable_records = itable_records + int(result['RecordCount'])
+        
+            if download_data:
 
-            for result in result_list:
                 p(info, '\n\tCommencing retrievel of table data for', result['Identifier'], result_list.index(result)+1,'/',len(result_list))
                 
+                # initialize excel
+                workbook = Workbook()                
+                
                 if table_prop:
-                    get_table_meta(result, 'DataProperties')
+                    get_table_meta(result, 'DataProperties', workbook)
                     # get info from tables
            
                 if table_meta:
-                    get_table_meta(result, 'TableInfos')
+                    get_table_meta(result, 'TableInfos', workbook)
+                    get_table_meta(result, 'TableListInfo', workbook)
                         
                 elif not table_meta and not table_prop:
                     # get all data and properties of table
-                    get_table_meta(result)
+                    objects_lst = ['DataProperties','TableInfos','CategoryGroups','TypedDataSet','TableListInfo']
+                    
+                    if download_excel:
+                        p(info,'\t\texcel file name\t\t'+folder_name+result['Identifier']+'/'+result['Identifier']+"-objects.xlsx")
+                    if download_csv:
+                        p(info,'\t\tcsv file name(s)\t' + folder_name+result['Identifier']+'/'+result['Identifier']+'-<object>.csv')
+                    if download_json:
+                        p(info,'\t\tjson file name(s)\t' + folder_name+result['Identifier']+'/'+result['Identifier']+'-<object>.json')
+
+                    for object in objects_lst:
+                        download_excel_old = download_excel
+                        if not int(result['RecordCount']) > 1000000 and not object == 'TypedDataSet':
+                            get_table_meta(result, object, workbook)
+                        elif int(result['RecordCount']) > 1000000 and object == 'TypedDataSet':
+                            p(warning,'\t\t\t\t... data TypedDataset not converted to excel because\n\t\t\t\t... \tit has too many records ('+str(result['RecordCount'])+').', 'Use -csv\n\t\t\t\t... \tto download csv file.' if not download_csv else 'Next -csv\n\t\t\t\t... \tdownload will occur.')
+                            download_excel = False
+                            if download_csv or download_json: 
+                                get_table_meta(result, object, workbook)
+                            download_excel = download_excel_old
+                        else:
+                            get_table_meta(result, object, workbook)
+
 
                 if not no_master:
                     masterControlData(result)
-                    itable_records = itable_records + int(controlInformationTable['RecordCount'])
+                    # itable_records = itable_records + int(controlInformationTable['RecordCount'])
                     # send to master
                     controlInformationTable['lastRefreshDate'] = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
                     controlInformationTables.update(controlInformationTable)    
                     masterControlFile()        
 
 
-        else:
-            p(warning, "Results not downloaded. Use argument '-d' for download or one of the file extensions (-csv, -xls, -json). When there are more then 60 tables also use -force -update.")
+        if not download_data:
+            p(warning, "\nResults not downloaded. Use argument '-d' for download or one\nof the file extensions (-csv, -xls, -json). When there are more\nthen 60 tables also use -force -update.")
                     
     p(verbose, 'Finished retrieving results.')
     
@@ -776,4 +874,4 @@ else:
 # stats for geeks
 end = datetime.datetime.now() 
 elapsed_time = (end - begin)    
-p(silent, '\nTotal time passed ' + str(elapsed_time), ' seconds, which is ', elapsed_time/len(result_list) if len(result_list)>0 else 0, ' per table. In total', itable_records, '(unique) records in the selection.' )
+p(silent, '\nTotal time passed ' + str(elapsed_time), ' seconds, which is ', elapsed_time/len(result_list) if len(result_list)>0 else 0, ' per\ntable. In total there are', itable_records, '(unique) records in the selection.' )
