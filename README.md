@@ -5,23 +5,38 @@ Command line interface to the cbsodata modules with added support for creating e
 # usage
 
 autocbs.py :: Download CBS data tables
-arguments:
--h                      this help
+
+Use argument -h (or omi any arguments) for the command line help
 -d                      download data (in -f)
+
 -f <folder>             folder name for data (+ Identifier), ./data/ is the default
+  
 -s <string,>            search for keywords in table shortdescription (can be comma seperated)
+
 -id <identifier>        table to download
+  
 -v <level>              output level silent, critical, error, warning, info, verbose or allmsg.
+
 -n <nr>                 maximum tables to get
+  
 -b <nr>                 start at record
+  
 -m                      Get meta data table
+
 -nm                     do NOT maintain master excel file with table info
+
 -p                      get the DataProperties of the table
+
 -csv                    save files as csv
+
 -force                  Force download of large result set
+
 -update                 Update already downloaded tables
+
 -xls                    update excel file
+
 -json                   update json files
+
 -mw                     table modifed within lastday, lastweek or lastmonth
   
 # examples
