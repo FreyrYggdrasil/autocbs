@@ -6,7 +6,7 @@ Command line interface to the cbsodata modules with added support for creating e
 
 autocbs.py :: Download CBS data tables
 
-Use argument -h (or omi any arguments) for the command line help
+Use argument -h (or omit any arguments) for the command line help
 -d                      download data (in -f)
 
 -f <folder>             folder name for data (+ Identifier), ./data/ is the default
