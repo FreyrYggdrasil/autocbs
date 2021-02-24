@@ -151,36 +151,29 @@ force_download = argument_list[15][1][1]
 modified_within = argument_list[16][1][1]
 
 if help_switch:
-    print(sys.argv[0], ':: Download CBS data tables\n\
-    arguments:\n-h\t\t\tthis help\n-d\t\t\tdownload data (in -f)\
-    \n-f <folder>\t\tfolder name for data (+ Identifier), ./data/\
-    is the default\n-s <string,>\t\tsearch for keywords in table \
-    shortdescription (can be comma seperated)\n-id <identifier>\
-    \ttable to download\n-v <level>\t\toutput level silent, info,\
-    warning, error, critical\n-n <nr>\t\t\tmaximum tables to get\
-    \n-b <nr>\t\t\tstart at record\n-m\t\t\tGet meta data table\
-    \n-nm\t\t\tdo NOT maintain master excel file with table info\
-    \n-p\t\t\tget the info of the table\n-csv\t\t\tsave files as \
-    csv\n-force\t\t\tForce download of large result set\n-update\
-    \t\t\tUpdate already downloaded tables\n-xls\t\t\tupdate excel \
-    file\n-json\t\t\tupdate json files\n-mw\t\t\ttable modifed \
-    within lastday, lastweek or lastmonth')
+    print(sys.argv[0], ':: Download CBS data tables\narguments:\n-h\t\t\tthis help\n-d\t\t\tdownload data (in -f)\n-f <folder>\t\tfolder name for data (+ Identifier), ./data/is the default\n-s <string,>\t\tsearch for keywords in table shortdescription (can be comma seperated)\n-id <identifier>\ttable to download\n-v <level>\t\toutput level silent, info, warning, error, critical\n-n <nr>\t\t\tmaximum tables to get\n-b <nr>\t\t\tstart at record\n-m\t\t\tGet meta data table\n-nm\t\t\tdo NOT maintain master excel file with table info\n-p\t\t\tget the info of the table\n-csv\t\t\tsave files as csv\n-force\t\t\tForce download of large result set\n-update\t\t\tUpdate already downloaded tables\n-xls\t\t\tupdate excel file\n-json\t\t\tupdate json files\n-mw\t\t\ttable modifed within lastday, lastweek or lastmonth')
     raise SystemExit(0)
 
 # loglevel
 # todo
-levels = ['silent','info','warning','error','critical']
-a = 0
+levels = ['silent', 'critical', 'error', 'warning', 'info', 'verbose', 'allmsg']
+silent = 0
+critical = 1
+error = 2
+warning = 3
+info = 4
+verbose = 5
+allmsg = 6
+
 for o in range(len(levels)):
     if levels[o] == str(output_level):
-        log_level = a
-        a+=1
+        log_level = o
     else:
-        log_level = 1   # silent
+        log_level = 4   # info
 
 # **************************************************
 # print string to screen for user feedback
-def p(s,text,*args):
+def p(plevel,text,*args):
     
     no_linefeed=False
     if not text: 
@@ -194,17 +187,20 @@ def p(s,text,*args):
                 text = text + ' ' + str(i)
             else:
                 no_linefeed = True
-        if s <= log_level: 
+
+        if log_level >= plevel: 
             if no_linefeed:
                 print(text, end="")
             else:
                 print(text)
+        else:
+            pass
     except ValueError:
         pass
     return
 
 # who we are and what we do
-p(1,str(sys.argv).replace('[','').replace(']','').replace("'",''),'\n')
+p(verbose,str(sys.argv).replace('[','').replace(']','').replace("'",''),'\n')
 
 # general download settings (default is all)
 if download_data and (not download_csv and not download_excel and not download_json): 
@@ -389,7 +385,7 @@ def masterControlFile(*fromProp):
             controlbook.save(output_file) 
             
         except Exception as e:
-            p(1,'\nUnable to save master control workbook', output_file, "Do you have it open in Excel? The error message is", e)
+            p(warning,'\nUnable to save master control workbook', output_file, "Do you have it open in Excel? The error message is", e)
             pass    
 
         controlInformationTable = {"Title":"","Updated":"","ShortTitle":"","Identifier":"","Summary":"","Modified":"","ReasonDelivery":"","Frequency":"","Period":"","RecordCount":"","lastRefreshDate":"","lastRefreshDateJson":"","lastRefreshDateCsv":"","lastRefreshDateExcel":""}
@@ -401,19 +397,10 @@ def masterControlFile(*fromProp):
 # ****************************
 # get endpoint using cbsodata
 # on error with excel switch
-def get_table_endpoint(data_in, endpoint, file_path, *workbook):
+def get_table_endpoint(p_identifier, endpoint, file_path, *workbook):
     
     global download_excel
-    
-    if type(data_in) == type(str()):
-        p_identifier = data_in
-    elif type(data_in) == type(list()):
-        p_identifier = data_in['Identifier']    
-    elif type(data_in) == type(dict()):
-        p_identifier = data_in['Identifier']         
-    else:
-        p_identifier = str(data_in)
-        
+            
     file_exists = False
     
     # does file exist and do we update and/or force?
@@ -433,26 +420,26 @@ def get_table_endpoint(data_in, endpoint, file_path, *workbook):
             output_file = os.path.join(file_path, p_identifier+'-objects.xlsx')
             if Path(output_file).is_file():
                 file_exists = True
-                download_excel = False
+                
     else:
         file_exists = False
-            
+        
     # do csv & excel & json
     if (not file_exists and download_data) and (download_csv or download_excel or download_json):
 
         try:                
             # put cbsodata respons in dataframe
             if endpoint == 'TableInfos':
-                data = pd.DataFrame(data_in, index=[0])
+                data = pd.DataFrame(cbsodata.get_meta(p_identifier, endpoint)) # pd.DataFrame(data_in, index=[0])
             else:
                 data = pd.DataFrame(cbsodata.get_meta(p_identifier, endpoint))
             
         except Exception as e:
-            p(1, '\t\t\t\tUnable to retrieve object', endpoint, 'for table', p_identifier, '. The error message was\t\t\t\t', e)
+            p(warning, '\t\t\t\tUnable to retrieve object', endpoint, 'for table', p_identifier, '. The error message was\t\t\t\t', e)
             return
 
         if download_excel:
-            workbook=convertTuple(workbook)            
+            workbook = convertTuple(workbook)            
             try:
                 # just remove this sheet, leave the rest alone
                 workbook.remove(workbook[endpoint[0:30]])
@@ -470,24 +457,26 @@ def get_table_endpoint(data_in, endpoint, file_path, *workbook):
             data_np = data[['odata.type', 'Key']].to_numpy()
             for dimension in data_np:
                 if dimension[0] == 'Cbs.OData.Dimension':
-                    p(1, '\t\t\t\t\t... extra dimension ', dimension[1])
+                    p(info, '\t\t\t\t\t... extra dimension ', dimension[1])
                     # do it again
                     get_table_endpoint(p_identifier, dimension[1], file_path, workbook if workbook else None)                   
 
         if download_csv:
             csv_data = save_data(data, file_path, p_identifier, endpoint,'csv')
-                
+            return csv_data
+            
         if download_json:
             json_data = save_data(data.to_json(), file_path, p_identifier, endpoint, 'json')
+            return json_data
             
         if download_excel:
             sheet = save_data(data, file_path, p_identifier, endpoint, sheet)
-            
+            return workbook
     else:
-        p(1, '\t\t\t\t\t... file exists but not updating')
+        p(warning, '\t\t\t\t\t... file exists but not updating')
     
     # only save excel output once
-    return workbook
+    return
 
 # **********************************
 # download data from table
@@ -496,14 +485,7 @@ def get_table_meta(data, *endpoint):
 
     global download_excel
     
-    if type(data) == type(str()):
-        p_identifier = data
-    elif type(data) == type(list()):
-        p_identifier = data['Identifier']
-    elif type(data) == type(dict()):
-        p_identifier = data['Identifier']         
-    else:
-        p_identifier = str(data)
+    p_identifier = data['Identifier']
         
     # table objects (endpoints for odata interface) excl. 'UntypedDataSet'
     objects_lst = ['DataProperties','Perioden','TableInfos','CategoryGroups','TypedDataSet']
@@ -523,11 +505,11 @@ def get_table_meta(data, *endpoint):
         try:
             os.mkdir(file_path)
         except Exception as e:
-            p(5,'Creating folder', file_path, 'failed with error', e, '. Do you have sufficient rights?')
+            p(error,'Creating folder', file_path, 'failed with error', e, '. Do you have sufficient rights?')
             download_data = False
 
     if download_excel:
-        p(1,'\t\texcel file name\t\t'+file_path+p_identifier+"-objects.xlsx")
+        p(info,'\t\texcel file name\t\t'+file_path+p_identifier+"-objects.xlsx")
         
         output_file = file_path+p_identifier+"-objects.xlsx"
         
@@ -548,7 +530,6 @@ def get_table_meta(data, *endpoint):
                 
             else:
                 workbook = None    
-                download_excel = False
                 
         else:
             workbook = Workbook()    
@@ -556,28 +537,33 @@ def get_table_meta(data, *endpoint):
         workbook = None
         
     if download_csv:
-        p(1,'\t\tcsv file name(s)\t' + file_path+p_identifier+'-<object>.csv')
+        p(info,'\t\tcsv file name(s)\t' + file_path+p_identifier+'-<object>.csv')
         
     if download_json:
-        p(1,'\t\tjson file name(s)\t' + file_path+p_identifier+'-<object>.json')
+        p(info,'\t\tjson file name(s)\t' + file_path+p_identifier+'-<object>.json')
 
     # save the data endpoints from list
     for i in retrieve_lst:
-        p(1, '\t\t\t\t... performing update for', i)
+        p(info, '\t\t\t\t... performing update for', i)
         if i == 'TableInfos':
-            return_value = get_table_endpoint(data, i, file_path, workbook)
+            return_value = get_table_endpoint(p_identifier, i, file_path, workbook)
         else:    
             return_value = get_table_endpoint(p_identifier, i, file_path, workbook)
 
     # saving excel
-    if download_excel:        
+    if download_excel and not type(return_value) == None:        
         if not no_master:
             controlInformationTable['lastRefreshDateExcel'] = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
         try:
             return_value.save(file_path+p_identifier+"-objects.xlsx")                    
+        except AttributeError:
+            if not data_refresh and not force_download:
+                pass
+            else:
+                p(warning,'Updating excel file failed. If it exists you could use *-update* or *-force*.\n')
         except Exception as e:
-            p(1,'\nUnable to save workbook', file_path+p_identifier+"-objects.xlsx.", "Do you have it open in Excel? The error message is", e)
+            p(warning,'\nUnable to save workbook', file_path+p_identifier+"-objects.xlsx.", "Do you have it open in Excel?\n The error message is \n", e)
             pass
                     
     return return_value
@@ -610,12 +596,12 @@ def convertToList(data, datatype):
             return listObject
 
         else:
-            p(1, 'Converting the file', file, 'of type', datatype, 'did not succeed. It seems like', datatype, 'is not implemented (yet).')
+            p(warning, 'Converting the file', file, 'of type', datatype, 'did not succeed. It seems like', datatype, 'is not implemented (yet).')
             listObject = []
             return listObject
             
     except Exception as e:
-        p(5, 'While converting the file', file, 'to a list the following error occured:\n', e)
+        p(error, 'While converting the file', file, 'to a list the following error occured:\n', e)
         listObject = []
         return listObject
         
@@ -624,18 +610,18 @@ def convertToList(data, datatype):
 # main get table list if no ID given
 if not table_identifier:
     if len(glob.glob(folder_name + "cbs_all_tables.list")) > 0 and data_refresh:
-        p(1, "A local copy (" + folder_name + "cbs_all_tables.json) has been found. Update is used, retrieving data from CBS odata endpoint and saving it as new local copy.")
+        p(info, "A local copy (" + folder_name + "cbs_all_tables.json) has been found. Update is used, retrieving data from CBS odata endpoint and saving it as new local copy.")
         tables = cbsodata.get_table_list()
         # save as local copy
         pickle.dump( tables, open( folder_name + "cbs_all_tables.list", "wb" ) )
       
     elif len(glob.glob(folder_name + "cbs_all_tables.list")) > 0 and not data_refresh:     
         # we have a cbs_all_tables local copy
-        p(1, "Using local copy of CBS table information in (" + folder_name + "cbs_all_tables.json).")
+        p(info, "Using local copy of CBS table information in (" + folder_name + "cbs_all_tables.json).")
         tables = convertToList(folder_name + "cbs_all_tables.list", "CBSODATA")
 
     else:
-        p(1, "There is no " + folder_name + "cbs_all_tables.list found. Retrieving data from CBS odata endpoint and saving it as new local copy.")
+        p(info, "There is no " + folder_name + "cbs_all_tables.list found. Retrieving data from CBS odata endpoint and saving it as new local copy.")
         tables = cbsodata.get_table_list()
         # save as local copy
         pickle.dump( tables, open( folder_name + "cbs_all_tables.list", "wb" ) ) 
@@ -645,7 +631,7 @@ else:
     tables = []
     for i in table_identifier:
         tables.append(cbsodata.get_meta(i, 'TableInfos'))
-    p(1, 'TableInfo downloaded from CBS for', len(tables), 'due to argument -i.')
+    p(verbose, 'TableInfo downloaded from CBS for', len(tables), 'due to argument -i.')
     get_tables = len(tables)
 
 # some vars for loop
@@ -660,28 +646,28 @@ search_list = []  # save search arguments
 if not start_record: 
     start_record = 0
 else:
-    p(1, 'Starting at record ', start_record)
+    p(verbose, 'Starting at record ', start_record)
 
-p(1, 'Table list contains ' + str(all_tables) + ' tables ', 'starting at record '+ str(start_record) if start_record > 0 else '' )
+p(verbose, 'Table list contains ' + str(all_tables) + ' tables ', 'starting at record '+ str(start_record) if start_record > 0 else '' )
 
 # how much?
 end_record = all_tables - start_record
     
 if get_tables > 0: 
-    p(1, 'Getting maximum of ' + str(get_tables) + ' tables due to argument -n or -i.')
+    p(info, 'Getting maximum of ' + str(get_tables) + ' tables due to argument -n or -i.')
     end_record = start_record + get_tables
     
 if end_record > all_tables:
     end_record = all_tables
-    p(1, 'End record is ' + str(end_record))
+    p(verbose, 'End record is ' + str(end_record))
     
 # Console messages 
-p(1, 'Searching in ShortDescription for keyword(s) ' + str(search_arg) if search_arg else 'No search keywords (-s) given.')
-p(1, 'Downloading data into folder ', folder_name)
+p(info, 'Searching in ShortDescription for keyword(s) ' + str(search_arg) if search_arg else 'No search keywords (-s) given.')
+p(verbose, 'Downloading data into folder ', folder_name)
 
-if table_meta: p(1, 'Meta data will be downloaded...')
+if table_meta: p(verbose, 'Meta data will be downloaded...')
 
-p(1, '\n--------------------')
+p(verbose, '\n--------------------')
 
 if len(search_arg)>0:
     search_list = search_arg
@@ -710,20 +696,20 @@ for table in tables:
             maxmoddate = datetime.date.today()
             if datemodified >= minmoddate and datemodified <= maxmoddate:
                 modified_within_selection = True
-                p(1, 'Table', table['Identifier'], 'modified on', datemodified, 'which is valid for the selection.')
+                p(verbose, 'Table', table['Identifier'], 'modified on', datemodified, 'which is valid for the selection.')
             elif datemodified > maxmoddate:
                 modified_within_selection = False
-                p(2, 'Table has a modified date of', datemodified, 'which is in the future. Wauw.')
+                p(verbose, 'Table has a modified date of', datemodified, 'which is in the future. Wauw.')
             elif datemodified < minmoddate: 
                 modified_within_selection = False
-                p(2, 'Table is last modified on', datemodified, 'which is too far in the past.')
+                p(verbose, 'Table is last modified on', datemodified, 'which is too far in the past.')
         else:
             modified_within_selection = True
             
         if modified_within_selection:
-            p(4, 'getting meta data', table['Identifier'])
-            p(4, 'Identifier table ' + table['Identifier'] + '\nShortTitle table' + table['ShortTitle'])
-            p(4, '\nShortDescription table' + table['ShortDescription'])            
+            p(verbose, 'getting meta data', table['Identifier'])
+            p(verbose, 'Identifier table ' + table['Identifier'] + '\nShortTitle table' + table['ShortTitle'])
+            p(verbose, '\nShortDescription table' + table['ShortDescription'])            
 
             # search properties
             if search_list:
@@ -733,32 +719,31 @@ for table in tables:
                         if str(table['ShortDescription']).find(keyword) > 0:
                             number_of_hits += 1
                             isHit = True
-                            p(1 if not download_data else 2, table['Identifier'], 'has in ShortDescription search item', keyword,'and is updated within the modified date selection criteria.' if modified_within_selection else keyword)
+                            p(info if not download_data else verbose, table['Identifier'], 'has in ShortDescription search item', keyword,'and is updated within the modified date selection criteria.' if modified_within_selection else keyword)
                             result_list.append(table)
                         else:
-                            p(3, 'Search string not found', keyword)
+                            p(verbose, 'Search string not found', keyword)
                 
             else: # no search parameters given
-                p(1, 'Table', table['Identifier'], 'selected and added to the result list.')
+                p(verbose, 'Table', table['Identifier'], 'selected and added to the result list.')
                 result_list.append(table)
 
     # stop searching
     if itable >= end_record:
-        p(1, '--------------------')
+        p(verbose, '--------------------')
         break
 
 # any results? or just this one table
 if len(result_list)>0:
-    p(1, '\nNumber of tables to retrieve:', len(result_list))
+    p(info, '\nNumber of tables to retrieve:', len(result_list))
     
     if len(result_list) > 60 and (not data_refresh or not force_download) and download_data and not table_prop:
-        p(1, "\nThis is (probably) a lot of data, please use -force -update \
-        to download. \nOr use parameter -m to download just the table information.")
+        p(warning, "\nThis is (probably) a lot of data, please use -force -update to download. \nOr use parameter -m to download just the table information.")
     else:
         if download_data:
 
             for result in result_list:
-                p(1, '\n\tCommencing retrievel of table data for', result['Identifier'], result_list.index(result)+1,'/',len(result_list))
+                p(info, '\n\tCommencing retrievel of table data for', result['Identifier'], result_list.index(result)+1,'/',len(result_list))
                 
                 if table_prop:
                     get_table_meta(result, 'DataProperties')
@@ -781,16 +766,14 @@ if len(result_list)>0:
 
 
         else:
-            p(1, "Results not downloaded. Use argument '-d' for download \
-            or one of the file extensions (-csv, -xls, -json). When there \
-            are more then 60 tables also use -force -update.")
+            p(warning, "Results not downloaded. Use argument '-d' for download or one of the file extensions (-csv, -xls, -json). When there are more then 60 tables also use -force -update.")
                     
-    p(1, 'Finished retrieving results.')
+    p(verbose, 'Finished retrieving results.')
     
 else:
-    p(1,'No search strings and/or results found. Maybe something wrong with the filter?')
+    p(warning,'No search strings and/or results found. Maybe something wrong with the filter?')
 
 # stats for geeks
 end = datetime.datetime.now() 
 elapsed_time = (end - begin)    
-p(1, '\nTotal time passed ' + str(elapsed_time), ' seconds, which is ', elapsed_time/len(result_list) if len(result_list)>0 else 0, ' per table. In total', itable_records, '(unique) in the selection.' )
+p(silent, '\nTotal time passed ' + str(elapsed_time), ' seconds, which is ', elapsed_time/len(result_list) if len(result_list)>0 else 0, ' per table. In total', itable_records, '(unique) records in the selection.' )
