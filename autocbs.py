@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 #  Copyright (c) 2021 Freyr Yggdrasil 
 #  https://github.com/FreyrYggdrasil/autocbs
 
@@ -37,19 +39,20 @@ import csv
 import os
 import glob
 
-#  dataframes
+#  dataframes and manipulation
 import pandas as pd
 import numpy as np
 import functools
 import operator
 from pathlib import Path
+import re
 
 #  excel support
 from openpyxl import Workbook
 from openpyxl import load_workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles import Alignment
-from openpyxl.utils.cell import coordinate_from_string, column_index_from_string
+from openpyxl.utils.cell import coordinate_from_string, column_index_from_string, get_column_interval, cols_from_range
 
 #  command line arguments
 import sys
@@ -81,7 +84,7 @@ help_switch = False         #0 -h
 download_data = False       #1 -d download data
 folder_name = ''            #2 -f ./data/ is default
 search_arg = []             #3 -s <keywords,> to search for in Shortdescription
-table_identifier = []       #4 -i <id,>
+table_identifier = []       #4 -id <id,>
 get_tables = 0              #5 -n <nr>
 output_level = ''           #6 -v silent,info,warning,error,critical # to do
 start_record = 0            #7 -b <nr> begin at record 
@@ -94,6 +97,7 @@ download_excel = False      #13 -xls download data as xlsx file
 download_json =  False      #14 -json  download data as json file
 force_download = False      #15 -force force update of local data
 modified_within = ''        #16 -md last[day,week,month,year] only tables that are changed
+search_regex = ''           #17 -sr "<regex string>" a regex string to search for   
 
 # arguments
 argument_list = [['-h', help_switch], ['-d', download_data], 
@@ -103,7 +107,7 @@ argument_list = [['-h', help_switch], ['-d', download_data],
     ['-csv', download_csv], ['-update', data_refresh], 
     ['-xls', download_excel], ['-json', download_json], 
     ['-force', force_download], 
-    ['-mw', modified_within]]
+    ['-mw', modified_within], ['-sr', search_regex]]
 
 # **************************************************
 # evaluate command line arguments
@@ -139,7 +143,6 @@ for a in range(len(sys_args)):
 # assign arguments
 for a in range(len(results_args)): 
     argument_list[int(str(results_args[a][0]))][1][1] = results_args[a][2]
-print(results_args, '\n', argument_list)
 
 help_switch = argument_list[0][1][1]
 download_data = argument_list[1][1][1]
@@ -158,9 +161,11 @@ download_excel = argument_list[13][1][1]
 download_json = argument_list[14][1][1]
 force_download = argument_list[15][1][1]
 modified_within = argument_list[16][1][1]
+search_regex = argument_list[17][1][1]
 
 if help_switch:
-    print(sys.argv[0], ':: Download CBS data tables\narguments:\n-h\t\t\tthis help\n-d\t\t\tdownload data for table (in -f). Implies -csv, -json\n\t\t\t and -xls if none of them are given\n-f <folder>\t\tfolder name for data download, Identifier is added to\n\t\t\t the path, ./data/is the default\n-s <string,>\t\tsearch for keywords in table ShortDescription (can be\n\t\t\t comma seperated)\n-id <identifier,>\ttable(s) to download using on TableInfos.Identifier\n-v <level>\t\tstdout output level (less->more) silent, critical,\n\t\t\t error, warning, info, verbose, allmsg\n-n <nr>\t\t\tmaximum tables to get (use this while testing)\n-b <nr>\t\t\tstart at record (use this while testing)\n-m\t\t\tget meta data (TableInfos) of the selected table(s)\n-nm\t\t\tdo NOT maintain master excel (get_data_control.xlsx)\n\t\t\t with table info\n-p\t\t\tget the DataProperties of the table\n-csv\t\t\tsave files as csv\n-force\t\t\tforce download of large result set (will still skip\n\t\t\t excel sheet TypedDataset when records > 1.000.000)\n-update\t\t\tupdate already downloaded tables\n-xls\t\t\tdownload/update excel file with table objects (will skip\n\t\t\t TypedDataSet for records > 1.000.000)\n-json\t\t\tupdate json files\n-mw\t\t\ttable modifed within lastday, lastweek, lastmonth\n\t\t\t or lastyear')
+    print(sys.argv[0], ':: Download CBS data tables\narguments:\n-h\t\t\tthis help\n-d\t\t\tdownload data for table (in -f). Implies -csv, -json\n\t\t\t and -xls if none of them are given\n-f <folder>\t\tfolder name for data download, Identifier is added to\n\t\t\t the path, ./data/is the default\n-s <string,>\t\tsearch for keywords in table ShortDescription (can be\n\t\t\tseperatro , or +)\n-id <identifier,>\ttable(s) to download using on TableInfos.Identifier\n-v <level>\t\tstdout output level (less->more) silent, critical,\n\t\t\t error, warning, info, verbose, allmsg\n-n <nr>\t\t\tmaximum tables to get (use this while testing)\n-b <nr>\t\t\tstart at record (use this while testing)\n-m\t\t\tget meta data (TableInfos) of the selected table(s)\n-nm\t\t\tdo NOT maintain master excel (get_data_control.xlsx)\n\t\t\t with table info\n-p\t\t\tget the DataProperties of the table\n-csv\t\t\tsave files as csv\n-force\t\t\tforce download of large result set (will still skip\n\t\t\t excel sheet TypedDataset when records > 1.000.000)\n-update\t\t\tupdate already downloaded tables\n-xls\t\t\tdownload/update excel file with table objects (will skip\n\t\t\t TypedDataSet for records > 1.000.000)\n-json\t\t\tupdate json files\n-mw\t\t\ttable modifed within lastday, lastweek, lastmonth\n\t\t\t or lastyear. A date wil work as well (e.g. 20210224)\n-sr\t\t\tsearch for "regex"')
+    
     raise SystemExit(0)
 
 # loglevel
@@ -274,6 +279,9 @@ def save_data(data, dir, p_identifier, metadata_name, argument):
     if type(argument) == type(str()):
         output_file = os.path.join(dir, p_identifier+'-'+metadata_name + '.' + argument)
         
+    elif type(argument) == type(None):
+        p(critical,'Argument for function is empty', type(argument))
+        raise SystemExit(1)
     else:
         # getting data for excel
         output_file = os.path.join(dir, p_identifier+'-objects.xlsx')
@@ -302,10 +310,14 @@ def save_data(data, dir, p_identifier, metadata_name, argument):
     
     else:
         # excel sheet data
-        if str(type(workbook)) != "<class 'openpyxl.workbook.workbook.Workbook'>":
+        if str(type(workbook)) != "<class 'openpyxl.workbook.workbook.Workbook'>" and type(workbook) != None:
             workbook = convertTuple(workbook)
         
-        sheet = workbook[metadata_name]        
+        try:
+            sheet = workbook[metadata_name[0:30]]
+        except:
+            p(warning,'\t\t\t\t... creating', metadata_name[0:30], 'in workbook.')
+            sheet = workbook.create_sheet(metadata_name[0:30])
         
         for row in dataframe_to_rows(data, index=False, header=True):
             sheet.append(row)
@@ -339,7 +351,7 @@ def masterControlData(data):
         for ci in controlInformationTable:
             try:
                 controlInformationTable[ci] = data[ci]
-            except KeyError:
+            except KeyError:    # first key for extra autocbs values
                 controlInformationTable['lastRefreshDate'] = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
                 break
                 
@@ -355,41 +367,44 @@ def masterControlFile(*fromProp):
     global controlInformationTable
     global controlInformationTables
     
+    output_file = folder_name + control_file
+    
     if not fromProp:
-        
-        output_file = folder_name + control_file
             
-        if Path(output_file).is_file():
+        if Path(output_file).is_file():            
             try:
                 controlbook = load_workbook(output_file)
-                controlbook.active = controlbook['controlBook CBS']
+                controlbook.active = controlbook['controlbook CBS']
                 sheet = controlbook.active
                 addHeader = False
                 addValues = True
 
             except:
                 controlbook = Workbook()    
-                sheet = controlbook.create_sheet('controlBook CBS') # max first 31 chars
+                sheet = controlbook.create_sheet('controlbook CBS')
                 addHeader = True
                 addValues = True
                 
         else:
             controlbook = Workbook()    
-            sheet = controlbook.create_sheet('controlBook CBS') # max first 31 chars
+            sheet = controlbook.create_sheet('controlbook CBS')
             addHeader = True
             addValues = True
             
         lastrow = sheet.max_row+1
         
         if addHeader:
-            # pd = pd.DataFrame(controlInformationTables)
+
             for col, val in enumerate(controlInformationTables.keys(), start=1):
-                sheet.cell(row=1, column=col).value = val
-    
+                sheet.cell(row=1, column=col).value = val.encode("utf8")
+                            
         if addValues:
             for col, val in enumerate(controlInformationTables.values(), start=1):
-                sheet.cell(lastrow, column=col).value = val
-            
+                if type(val) != type(int):
+                    sheet.cell(lastrow, column=col).value = val
+                else:
+                    sheet.cell(lastrow, column=col).value = str(val).encode("utf8")
+                    
         try:
             controlbook.save(output_file) 
             
@@ -397,9 +412,173 @@ def masterControlFile(*fromProp):
             p(warning,'\nUnable to save master control workbook', output_file, "Do you have it open in Excel? The error message is", e)
             pass    
 
-        controlInformationTable = {"Title":"","Updated":"","ShortTitle":"","Identifier":"","Summary":"","Modified":"","ReasonDelivery":"","Frequency":"","Period":"","RecordCount":"","lastRefreshDate":"","lastRefreshDateJson":"","lastRefreshDateCsv":"","lastRefreshDateExcel":""}
+        controlInformationTable = {"Title":"","Updated":"","ShortTitle":"","Identifier":"","Summary":"","Modified":"","ReasonDelivery":"","Frequency":"","Period":"","RecordCount":"","lastRefreshDate":"","lastRefreshDateJson":"","lastRefreshDateCsv":"","lastRefreshDateExcel":"","statLineURL":""}
         controlInformationTables = {}
 
+    elif convertTuple(fromProp) == 'html':
+        
+        p(info, '\nConverting master controlbook '+output_file+' to html file '+output_file+'.html')
+        
+        if Path(output_file).is_file():
+            try:
+                controlbook = load_workbook(output_file, data_only = True)
+                sheet_names = controlbook.sheetnames
+            except:
+                p(info,'Unable to load controlbook', output_file, 'the error was\n', e)
+                sheet_names = ['controlbook CBS']
+                pass
+                
+            try:
+                data = {}
+                with pd.ExcelFile(output_file) as xls:
+                    for sh_name in sheet_names:
+                        data[sh_name] = pd.read_excel(xls, sh_name, index_col=None)
+
+                try:
+                    data[sh_name] = data[sh_name].drop_duplicates(subset=['Identifier'], keep='last')
+                    with pd.ExcelWriter(output_file) as writer:
+                        for sh_name in sheet_names:
+                            try:
+                                data[sh_name].to_excel(writer, sheet_name=sh_name, index=False)
+                            except Exception as e:
+                                p(error, 'An error occured wil writing the deduplicated file:', e)
+                    
+                except Exception as e:
+                    p(info,'Unable to remove duplicates from controlbook', output_file, '\nThe error was: ', e)
+                    return
+                
+            except Exception as e:
+                p(info,'Unable to load panda controlbook', output_file, 'the error was\n', e)
+                return
+            
+            finally:
+                
+                try:
+                    controlbook = load_workbook(output_file, data_only = True)    
+                except Exception as e:
+                    p(info,'Unable to load deduplicated controlbook', output_file, 'the error was\n', e)
+                    return
+
+        html_data = """<!DOCTYPE html>
+<html lang="nl">
+<head><title>controlbook CBS data</title>
+<style>
+body {
+  background-color: white;
+}
+h1 {
+  color: blue;
+  font-family: verdana;
+  font-size: 300%;
+}
+h2 {
+  font-family: verdana;
+  font-size: 200%;
+}
+h3 {
+  color: blue;
+  font-family: verdana;
+  font-size: 150%;    
+}
+body {
+  color: black;
+  font-family: verdana;
+  font-size: 100%;    
+}
+table {
+  border: 1px solid black;
+  border-collapse: collapse;
+  width: 100%;
+  margin-left: 10px;
+  margin-right: 10px;
+  color: black;
+  font-family: verdana;
+  font-size: 100%;   
+}
+th, td.header {
+  border: 1px solid black;
+  border-collapse: collapse;
+  height: 20px;
+  text-align: left;
+  background-color: #4CAF50;
+  color: white;  
+}
+td, cellhref, cellempty, cellvalue {
+  border: 1px solid black;
+  border-collapse: collapse;
+  text-align: left;
+  vertical-align: top;
+}
+th, td {
+  padding: 8px;
+}
+tr {
+  border: 1px solid black;
+  border-collapse: collapse;
+}
+tr:hover {
+  background-color: #f5f5f5;
+}
+div {
+  height:60vh;
+  overflow-y:scroll;
+  overflow-x:scroll;
+}
+</style>
+</head>
+<body>
+<h3>controlbook CBS data</h3>
+<div>
+<table>"""
+        
+        ws_sheet = controlbook['controlbook CBS']
+        a = 0
+        statLineURLs = []
+        
+        for cell in ws_sheet['O']:
+            statLineURLs.append(cell.value)
+            
+        end_column = ws_sheet.max_column
+        max_rows = ws_sheet.max_row
+        start_column = 1
+            
+        for row in ws_sheet.iter_rows(min_row=1, max_col=end_column, max_row=max_rows):
+            if a == 0: # first row
+                html_data += '\n<tr class="header">' 
+            else: # next rows
+                html_data += '\n<tr>'
+
+            column_index = start_column        
+            
+            for cell in row:
+                
+                if a == 0:
+                    html_data += '\n\t<th class="header">' + str(cell.value) + '</th>'
+                    
+                if a > 0:  # next rows
+                    if cell.value is None:
+                        html_data += '\n\t<td class="cellempty"> </td>'
+                    
+                    else:
+                        if column_index == 1:   # first column
+                            html_data += '\n\t<td class="celhref"><a href="' + statLineURLs[a] + '" title="'  + 'Naar StatLine' + '">'+ str(cell.value) + '</a></td>' 
+                        else:
+                            html_data += '\n\t<td class="cellvalue">' + str(cell.value) + '</td>'
+                
+                column_index+=1 # next column                
+                
+                if column_index == end_column:
+                    html_data += "</tr>"
+                    a+=1
+                    break
+
+ 
+        html_data += "</table></div></body></html>"
+
+        with open(output_file+'.html', "w") as html_fil:
+            html_fil.write(html_data)
+            
+        html_fil.close()
 
     return
 
@@ -504,10 +683,9 @@ def get_table_endpoint(p_identifier, endpoint, file_path, workbook):
             
             for period in data_np:
                 if period[0] == 'Cbs.OData.TimeDimension':
-                    if period[0][9] == "True":
-                        p(info, '\t\t\t\t\t... extra TimeDimension', period[1])
-                        # do it again
-                        workbook = get_table_endpoint(p_identifier, period[1], file_path, workbook) 
+                    p(info, '\t\t\t\t\t... extra TimeDimension', period[1])
+                    # do it again
+                    workbook = get_table_endpoint(p_identifier, period[1], file_path, workbook) 
             
         if download_csv:
             csv_data = save_data(data, file_path, p_identifier, endpoint,'csv')
@@ -524,8 +702,12 @@ def get_table_endpoint(p_identifier, endpoint, file_path, workbook):
     elif file_exists and (download_data or data_refresh) and download_excel:
 
         try:                
-            # put cbsodata respons in dataframe
-            data = pd.DataFrame(cbsodata.get_meta(p_identifier, endpoint))
+            if endpoint == 'TableListInfo':
+                # put tablelistinfo in dataframe
+                data = pd.DataFrame(data, index=[0])
+            else:
+                # put cbsodata respons in dataframe
+                data = pd.DataFrame(cbsodata.get_meta(p_identifier, endpoint))            
             
         except Exception as e:
             p(warning, '\t\t\t\tUnable to retrieve object', endpoint, 'for table', p_identifier, '. The error message was\t\t\t\t', e)
@@ -575,15 +757,12 @@ def get_table_meta(data, endpoint, workbook):
                     
             elif force_download: 
                 # create new by -force
-                workbook = Workbook()
-                
-            else:
-                workbook = None    
+                workbook = Workbook()  
                 
         else:
             workbook = Workbook()    
     else:
-        workbook = None
+        workbook = workbook
         
     # get the data endpoints from list
     p(info, '\t\t\t\t... performing update for', endpoint)
@@ -661,27 +840,37 @@ if not table_identifier:
         if not os.path.isdir(folder_name):
             try:
                 os.mkdir(folder_name)
-                pickle.dump( tables, open( folder_name + "cbs_all_tables.list", "wb" ) )
             except Exception as e:
                 p(error,'Creating folder', file_path, 'failed with error', e, '\nDo you have sufficient rights?')
+        
+        pickle.dump( tables, open( folder_name + "cbs_all_tables.list", "wb" ) )
+            
       
     elif len(glob.glob(folder_name + "cbs_all_tables.list")) > 0 and not data_refresh:     
         # we have a cbs_all_tables local copy
-        p(info, "Using local copy of CBS table information in (" + folder_name + "cbs_all_tables.json).")
+        p(info, "Using local copy of CBS table information in '" + folder_name + "cbs_all_tables.json'.")
         tables = convertToList(folder_name + "cbs_all_tables.list", "CBSODATA")
 
     else:
-        p(info, "There is no " + folder_name + "cbs_all_tables.list found. Retrieving data from\nCBS odata endpoint and saving it as new local copy.")
+        p(info, "No local copy of " + folder_name + "cbs_all_tables.list was found. Retrieving data from CBS odata endpoint and saving it as new local copy.")
         
         tables = cbsodata.get_table_list()
         # save as local copy
         if not os.path.isdir(folder_name):
             try:
                 os.mkdir(folder_name)
-                pickle.dump( tables, open( folder_name + "cbs_all_tables.list", "wb" ) )
+                    
             except Exception as e:
                 p(error,'Creating folder', file_path, 'failed with error', e, '. Do you have sufficient rights?')
-        
+            
+        else:
+            pass
+
+        try:
+            pickle.dump( tables, open( folder_name + "cbs_all_tables.list", "wb" ) )
+        except Exception as e:
+            p(error,'Saving new local copy failed. The error was:\n', e)
+
 else:
     # just this one table(s)
     tables = []
@@ -734,36 +923,51 @@ p(info, 'Downloading data into folder ', folder_name)
 
 if table_meta: p(verbose, 'Meta data will be downloaded...')
 
-p(verbose, '\n--------------------')
-
 if len(search_arg)>0:
     search_list = search_arg
 else:
     search_list=[]
 
+# modified date
+if modified_within:
+    if modified_within == 'lastday':
+        minmoddate = datetime.date.today() - datetime.timedelta(days=1)
+    elif modified_within == 'lastweek':
+        minmoddate = datetime.date.today() - datetime.timedelta(days=7)
+    elif modified_within == 'lastmonth':
+        minmoddate = datetime.date.today() - datetime.timedelta(days=30)
+    elif modified_within == 'lastyear':
+        minmoddate = datetime.date.today() - datetime.timedelta(days=365)
+    else:
+        try:
+            minmoddate = datetime.datetime.strptime(modified_within, '%Y-%m-%d')
+            minmoddate = datetime.datetime.date(minmoddate)
+        except ValueError:
+            try:
+                minmoddate = datetime.datetime.strptime(modified_within, '%Y%m%d')
+                minmoddate = datetime.datetime.date(minmoddate)
+            except ValueError:
+                p(error,'Can\'t understand the modified date? It should be in the form 20210101?', modified_within)
+                modified_within = False
+                raise SystemExit(16)
+                
+    maxmoddate = datetime.date.today()
+    p(info,'Looking for modifications between', minmoddate, 'and', maxmoddate, '\n')
+
 # start loop for all tables
+p(verbose, '\n--------------------')
 
 for table in tables:
     itable+=1
     if table_identifier:
         table=table[0]  
     # loop until we get at the start record
-    if itable >= start_record and itable <= end_record:
+        
+    if itable >= start_record and itable <= end_record:  
+        
         if modified_within:
             datemodified = datetime.datetime.strptime(table['Modified'][0:10], '%Y-%m-%d')
             datemodified = datetime.datetime.date(datemodified)
-        
-        if modified_within == 'lastday':
-            minmoddate = datetime.date.today() - datetime.timedelta(days=1)
-        if modified_within == 'lastweek':
-            minmoddate = datetime.date.today() - datetime.timedelta(days=7)
-        if modified_within == 'lastmonth':
-            minmoddate = datetime.date.today() - datetime.timedelta(days=30)
-        if modified_within == 'lastyear':
-            minmoddate = datetime.date.today() - datetime.timedelta(days=365)
-            
-        if modified_within:
-            maxmoddate = datetime.date.today()
             if datemodified >= minmoddate and datemodified <= maxmoddate:
                 modified_within_selection = True
                 p(verbose, 'Table', table['Identifier'], 'modified on', datemodified, 'which is valid for the selection.')
@@ -777,8 +981,8 @@ for table in tables:
             modified_within_selection = True
         
         if modified_within_selection:
-            p(verbose, 'getting meta data', table)
-            p(verbose, 'Identifier table ' + table['Identifier'] + '\nShortTitle table' + table['ShortTitle'])
+            p(verbose, '\nUsing meta data', table)
+            p(verbose, '\nIdentifier table ' + table['Identifier'] + '\nShortTitle table' + table['ShortTitle'])
             p(verbose, '\nShortDescription table' + table['ShortDescription'])            
 
             # search properties
@@ -789,10 +993,13 @@ for table in tables:
                         if str(table['ShortDescription']).find(keyword) > 0:
                             number_of_hits += 1
                             isHit = True
-                            p(info if not download_data else verbose, table['Identifier'], 'has in ShortDescription search item', keyword,'and is updated within the modified date selection criteria.' if modified_within_selection else keyword)
+                            p(info if not download_data else verbose, table['Identifier'], 'has in ShortDescription search item', keyword,'and is \nupdated on ' + str(datemodified) + ' which is in the modified date period.' if modified_within_selection else keyword)
                             result_list.append(table)
                         else:
                             p(verbose, 'Search string not found', keyword)
+
+                if search_regex: #todo
+                    pass
                 
             else: # no search parameters given
                 p(verbose, 'Table', table['Identifier'], 'selected and added to the result list.')
@@ -859,13 +1066,18 @@ if len(result_list)>0:
                     # itable_records = itable_records + int(controlInformationTable['RecordCount'])
                     # send to master
                     controlInformationTable['lastRefreshDate'] = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+                    controlInformationTable['statLineURL'] = 'https://opendata.cbs.nl/#/CBS/nl/navigatieScherm/zoeken?searchKeywords=' + result['Identifier']
                     controlInformationTables.update(controlInformationTable)    
                     masterControlFile()        
 
 
         if not download_data:
             p(warning, "\nResults not downloaded. Use argument '-d' for download or one\nof the file extensions (-csv, -xls, -json). When there are more\nthen 60 tables also use -force -update.")
-                    
+            
+        if download_data:
+            masterControlFile()
+            masterControlFile('html')                 
+    
     p(verbose, 'Finished retrieving results.')
     
 else:
